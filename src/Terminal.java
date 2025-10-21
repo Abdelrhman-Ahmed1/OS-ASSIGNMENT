@@ -212,6 +212,65 @@ public class Terminal{
         }
     }
 
+    public void cat(String[] args) {
+        if (args.length == 0 || args.length > 2) {
+            System.out.println("Wrong Input!!");
+            return;
+        }
+
+        for (String fileName : args) {
+            Path path = Paths.get(fileName);
+            if (!path.isAbsolute()) {
+                path = currentDir.resolve(path);
+            }
+            path = path.toAbsolutePath().normalize();
+
+            if (!Files.exists(path)) {
+                System.err.println("cat: " + fileName + ": No such file");
+                continue;
+            }
+
+            try {
+                Files.lines(path).forEach(System.out::println);
+            } catch (IOException e) {
+                System.err.println("cat: " + fileName + ": " + e.getMessage());
+            }
+        }
+    }
+
+
+
+    public void wc(String[] args) {
+        if (args.length != 1) {
+            System.out.println("Usage: wc <filename>");
+            return;
+        }
+        Path path = Paths.get(args[0]);
+        if (!path.isAbsolute()) {
+            path = currentDir.resolve(path);
+        }
+        path = path.toAbsolutePath().normalize();
+        if (!Files.exists(path)) {
+            System.err.println("wc: " + args[0] + ": No such file");
+            return;
+        }
+        try {
+            long lineCount = 0, wordCount = 0, charCount = 0;
+
+            for (String line : Files.readAllLines(path)) {
+                lineCount++;
+                charCount += line.length();
+                wordCount += line.trim().isEmpty() ? 0 : line.trim().split("\\s+").length;
+            }
+
+            System.out.println(lineCount + " " + wordCount + " " + charCount + " " + path.getFileName());
+
+        } catch (IOException e) {
+            System.err.println("wc: " + args[0] + ": " + e.getMessage());
+        }
+    }
+
+
     public void chooseCommandAction(String cmd, String[] args){
         switch(cmd){
             case "pwd":
@@ -234,6 +293,12 @@ public class Terminal{
                 break;
             case "rm":
                 rm(args);
+                break;
+            case "cat":
+                cat(args);
+                break;
+            case "wc":
+                wc(args);
                 break;
             default:
                 System.out.println("Unknown command: " + cmd);
