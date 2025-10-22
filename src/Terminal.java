@@ -273,6 +273,13 @@ public class Terminal{
 
     public void chooseCommandAction(String cmd, String[] args){
         switch(cmd){
+            case "echo":
+                if (args == null || args.length == 0) {
+                    System.out.println();
+                } else {
+                    System.out.println(String.join(" ", args));
+                }
+                break;
             case "pwd":
                 System.out.println(pwd());
                 break;
@@ -329,8 +336,56 @@ public class Terminal{
             if(!terminal.parser.parse(line)){
                 continue;
             }
+            
             String cmd = terminal.parser.getCommandName();
             String[] cmdArgs = terminal.parser.getArgs();
+
+            // 🔽 ADD FROM HERE
+            if(line.contains(">")) {
+                boolean append = line.contains(">>");
+                String[] parts = append ? line.split(">>") : line.split(">");
+                if(parts.length == 2) {
+                    String left = parts[0].trim();
+                    String right = parts[1].trim();
+
+                    // Parse left command
+                    if(!terminal.parser.parse(left)) continue;
+                    cmd = terminal.parser.getCommandName();
+                    cmdArgs = terminal.parser.getArgs();
+
+                    // Capture output
+                    java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                    java.io.PrintStream ps = new java.io.PrintStream(baos);
+                    java.io.PrintStream oldOut = System.out;
+                    System.setOut(ps);
+
+                    terminal.chooseCommandAction(cmd, cmdArgs);
+
+                    System.out.flush();
+                    System.setOut(oldOut);
+
+                    String output = baos.toString();
+                    java.nio.file.Path outFile = java.nio.file.Paths.get(right);
+                    if(!outFile.isAbsolute()){
+                        outFile = terminal.currentDir.resolve(outFile);
+                    }
+                    outFile = outFile.toAbsolutePath().normalize();
+
+                    try {
+                        if(append)
+                            java.nio.file.Files.write(outFile, output.getBytes(), java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+                        else
+                            java.nio.file.Files.write(outFile, output.getBytes(), java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+                    } catch (Exception e) {
+                        System.out.println("Redirection error: " + e.getMessage());
+                    }
+                    continue;
+                }
+            }
+            
+
+
+
             terminal.chooseCommandAction(cmd, cmdArgs);
         }
         scanner.close();
