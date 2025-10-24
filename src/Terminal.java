@@ -1,9 +1,7 @@
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.nio.file.*;
 import java.util.*;
 import java.util.zip.*;
-import java.io.*;
 
 class Parser{
     private String commandName;
@@ -216,7 +214,7 @@ public class Terminal{
 
     public void cat(String[] args) {
         if (args.length == 0 || args.length > 2) {
-            System.out.println("Wrong Input!!");
+            System.out.println("Usage: cat <filename>");
             return;
         }
 
@@ -269,6 +267,111 @@ public class Terminal{
             System.err.println("wc: " + args[0] + ": " + e.getMessage());
         }
     }
+
+    public void cp(String[] args) {
+        if (args.length < 2) {
+            System.out.println("Usage: cp <source> <destination>");
+            return;
+        }
+
+        File src = new File(currentDir.toFile(), args[0]);
+        File dest = new File(currentDir.toFile(), args[1]);
+
+        if (!src.exists()) {
+            System.out.println("Source not found: " + args[0]);
+            return;
+        }
+
+        if (dest.isDirectory()) {
+            dest = new File(dest, src.getName());
+        }
+
+        try (FileInputStream in = new FileInputStream(src);
+             FileOutputStream out = new FileOutputStream(dest)) {
+            byte[] buffer = new byte[1024];
+            int bytesRead;
+            while ((bytesRead = in.read(buffer)) != -1) {
+                out.write(buffer, 0, bytesRead);
+            }
+            System.out.println("File copied successfully to " + dest.getPath());
+        } catch (IOException e) {
+            System.out.println("Error copying file: " + e.getMessage());
+        }
+    }
+
+    public void cp_r(String[] args) {
+        if (args.length < 2) {
+            System.out.println("Usage: cp [-r] <source> <destination>");
+            return;
+        }
+
+        boolean recursive = false;
+        int startIndex = 0;
+
+        if (args[0].equals("-r")) {
+            recursive = true;
+            startIndex = 1;
+            if (args.length < 3) {
+                System.out.println("Usage: cp -r <source> <destination>");
+                return;
+            }
+        }
+
+        File src = new File(currentDir.toFile(), args[startIndex]);
+        File dest = new File(currentDir.toFile(), args[startIndex + 1]);
+
+        if (!src.exists()) {
+            System.out.println("Source not found: " + src.getPath());
+            return;
+        }
+
+        if (src.isDirectory()) {
+            if (!recursive) {
+                System.out.println("Omitting directory '" + src.getName() + "' (use -r to copy recursively)");
+                return;
+            }
+            copyDirectory(src, dest);
+        } else {
+            if (dest.isDirectory()) {
+                dest = new File(dest, src.getName());
+            }
+            copyFile(src, dest);
+        }
+
+        System.out.println("Copied successfully to " + dest.getPath());
+    }
+
+    private void copyFile(File src, File dest) {
+        try (FileInputStream in = new FileInputStream(src);
+             FileOutputStream out = new FileOutputStream(dest)) {
+            byte[] buffer = new byte[1024];
+            int bytesRead;
+            while ((bytesRead = in.read(buffer)) != -1) {
+                out.write(buffer, 0, bytesRead);
+            }
+        } catch (IOException e) {
+            System.out.println("Error copying file: " + e.getMessage());
+        }
+    }
+
+    private void copyDirectory(File srcDir, File destDir) {
+        if (!destDir.exists()) {
+            destDir.mkdirs();
+        }
+
+        File[] files = srcDir.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                File newDest = new File(destDir, file.getName());
+                if (file.isDirectory()) {
+                    copyDirectory(file, newDest);
+                } else {
+                    copyFile(file, newDest);
+                }
+            }
+        }
+    }
+
 
     public void zip(String[] args) {
         try {
@@ -391,6 +494,12 @@ public class Terminal{
                 break;
             case "wc":
                 wc(args);
+                break;
+            case "cp":
+                cp(args);
+                break;
+            case "cp_r":
+                cp_r(args);
                 break;
             case "zip":
                 zip(args);
