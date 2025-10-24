@@ -1,7 +1,9 @@
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
 import java.nio.file.*;
 import java.util.*;
 import java.util.zip.*;
+import java.io.*;
 
 class Parser{
     private String commandName;
@@ -214,7 +216,7 @@ public class Terminal{
 
     public void cat(String[] args) {
         if (args.length == 0 || args.length > 2) {
-            System.out.println("Usage: cat <filename>");
+            System.out.println("Wrong Input!!");
             return;
         }
 
@@ -269,11 +271,16 @@ public class Terminal{
     }
 
     public void cp(String[] args) {
+        if(args[0].equals("-r")){
+            cp_r(args);
+            return;
+        }
+        
         if (args.length < 2) {
             System.out.println("Usage: cp <source> <destination>");
             return;
         }
-
+        
         File src = new File(currentDir.toFile(), args[0]);
         File dest = new File(currentDir.toFile(), args[1]);
 
@@ -372,92 +379,148 @@ public class Terminal{
         }
     }
 
-
     public void zip(String[] args) {
-        try {
-            boolean recursive = false;
-            String zipFileName;
-            List<String> filesToZip = new ArrayList<>();
+        if (args.length < 2) {
+            System.out.println("zip: invalid number of arguments");
+            System.out.println("Usage: zip archive_name.zip file1 [file2 ...]");
+            return;
+        }
 
-            if (args.length >= 3 && args[0].equals("-r")) {
-                recursive = true;
-                zipFileName = args[1];
-                filesToZip.add(args[2]);
-            } else if (args.length >= 2) {
-                zipFileName = args[0];
-                filesToZip.addAll(Arrays.asList(Arrays.copyOfRange(args, 1, args.length)));
-            } else {
-                System.out.println("Usage: zip [-r] archive.zip file(s)/directory");
+        boolean recursive = false;
+        int startIndex = 1;
+        String zipName = args[0];
+
+        // Handle -r flag
+        if (args[0].equals("-r")) {
+            if (args.length < 3) {
+                System.out.println("zip: missing archive name or directory");
                 return;
             }
+            recursive = true;
+            zipName = args[1];
+            startIndex = 2;
+        }
 
-            Path zipPath = Paths.get(zipFileName);
-            try (FileOutputStream fos = new FileOutputStream(zipPath.toFile());
-                 ZipOutputStream zos = new ZipOutputStream(fos)) {
+        Path zipPath = currentDir.resolve(zipName);
 
-                for (String fileName : filesToZip) {
-                    Path filePath = Paths.get(fileName);
-                    if (Files.isDirectory(filePath) && recursive) {
-                        Files.walk(filePath).forEach(path -> {
-                            try {
-                                if (!Files.isDirectory(path)) {
-                                    ZipEntry zipEntry = new ZipEntry(filePath.relativize(path).toString());
-                                    zos.putNextEntry(zipEntry);
-                                    Files.copy(path, zos);
-                                    zos.closeEntry();
-                                }
-                            } catch (IOException e) {
-                                System.err.println("Error adding file: " + path);
-                            }
-                        });
-                    } else if (Files.isRegularFile(filePath)) {
-                        ZipEntry zipEntry = new ZipEntry(filePath.getFileName().toString());
-                        zos.putNextEntry(zipEntry);
-                        Files.copy(filePath, zos);
-                        zos.closeEntry();
+        try (FileOutputStream fos = new FileOutputStream(zipPath.toFile());
+             ZipOutputStream zos = new ZipOutputStream(fos)) {
+
+            for (int i = startIndex; i < args.length; i++) {
+                Path target = currentDir.resolve(args[i]);
+                if (!Files.exists(target)) {
+                    System.out.println("zip: cannot find '" + args[i] + "'");
+                    continue;
+                }
+
+                if (Files.isDirectory(target)) {
+                    if (recursive) {
+                        Files.walk(target)
+                                .filter(p -> !Files.isDirectory(p))
+                                .forEach(p -> {
+                                    try {
+                                        String entryName = target.getParent() == null
+                                                ? p.toString()
+                                                : target.getParent().relativize(p).toString();
+                                        zos.putNextEntry(new ZipEntry(entryName));
+                                        Files.copy(p, zos);
+                                        zos.closeEntry();
+                                    } catch (IOException e) {
+                                        System.out.println("zip: failed to add " + p.getFileName());
+                                    }
+                                });
                     } else {
-                        System.err.println("File not found: " + fileName);
+                        System.out.println("zip: " + args[i] + " is a directory (use -r to include it)");
+                    }
+                } else {
+                    try {
+                        zos.putNextEntry(new ZipEntry(target.getFileName().toString()));
+                        Files.copy(target, zos);
+                        zos.closeEntry();
+                    } catch (IOException e) {
+                        System.out.println("zip: failed to add file '" + args[i] + "'");
                     }
                 }
             }
-            System.out.println("Created: " + zipPath.toAbsolutePath());
+
+            System.out.println("zip: created '" + zipName + "' successfully");
+
         } catch (IOException e) {
-            System.err.println("Error creating ZIP: " + e.getMessage());
+            System.out.println("zip: error creating '" + zipName + "': " + e.getMessage());
         }
     }
 
     public void unzip(String[] args) {
-        if (args.length < 1) {
-            System.out.println("Usage: unzip archive.zip [-d destination]");
+        if (args == null || args.length == 0) {
+            System.out.println("unzip: missing archive name");
             return;
         }
 
-        String zipFileName = args[0];
-        String destDir = ".";
+        // Parse args flexibly: allow either "unzip archive.zip -d dest" or "unzip -d dest archive.zip"
+        String archiveArg = null;
+        String destArg = null;
 
-        if (args.length >= 3 && args[1].equals("-d")) {
-            destDir = args[2];
+        for (int i = 0; i < args.length; i++) {
+            if ("-d".equals(args[i]) && i + 1 < args.length) {
+                destArg = args[i + 1];
+                i++;
+            } else {
+                if (archiveArg == null) archiveArg = args[i];
+
+            }
         }
 
-        Path destPath = Paths.get(destDir);
+        if (archiveArg == null) {
+            System.out.println("unzip: missing archive name");
+            return;
+        }
 
-        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipFileName))) {
-            ZipEntry entry;
-            while ((entry = zis.getNextEntry()) != null) {
-                Path newFilePath = destPath.resolve(entry.getName());
-                if (entry.isDirectory()) {
-                    Files.createDirectories(newFilePath);
-                } else {
-                    Files.createDirectories(newFilePath.getParent());
-                    Files.copy(zis, newFilePath, StandardCopyOption.REPLACE_EXISTING);
+        Path zipPath = Paths.get(archiveArg);
+        if (!zipPath.isAbsolute()) zipPath = currentDir.resolve(zipPath);
+        zipPath = zipPath.normalize();
+
+        Path destDir = currentDir;
+        if (destArg != null) {
+            Path t = Paths.get(destArg);
+            if (!t.isAbsolute()) t = currentDir.resolve(t);
+            destDir = t.normalize();
+        }
+
+        if (!Files.exists(zipPath)) {
+            System.out.println("unzip: cannot find '" + zipPath.getFileName() + "'");
+            return;
+        }
+
+        try {
+            if (!Files.exists(destDir)) Files.createDirectories(destDir);
+
+            try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipPath.toFile()))) {
+                ZipEntry entry;
+                while ((entry = zis.getNextEntry()) != null) {
+                    Path newFilePath = destDir.resolve(entry.getName()).normalize();
+
+                    if (!newFilePath.startsWith(destDir.toAbsolutePath())) {
+                        System.out.println("unzip: skipping suspicious entry: " + entry.getName());
+                        zis.closeEntry();
+                        continue;
+                    }
+
+                    if (entry.isDirectory()) {
+                        Files.createDirectories(newFilePath);
+                    } else {
+                        if (newFilePath.getParent() != null) Files.createDirectories(newFilePath.getParent());
+                        Files.copy(zis, newFilePath, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                    zis.closeEntry();
                 }
-                zis.closeEntry();
             }
-            System.out.println("Extracted to: " + destPath.toAbsolutePath());
+
+            System.out.println("unzip: extracted '" + zipPath.getFileName() + "' successfully");
         } catch (IOException e) {
-            System.err.println("Error extracting ZIP: " + e.getMessage());
+            System.out.println("unzip: error extracting '" + zipPath.getFileName() + "': " + e.getMessage());
         }
     }
+
 
     public void chooseCommandAction(String cmd, String[] args){
         switch(cmd){
@@ -497,9 +560,6 @@ public class Terminal{
                 break;
             case "cp":
                 cp(args);
-                break;
-            case "cp_r":
-                cp_r(args);
                 break;
             case "zip":
                 zip(args);
