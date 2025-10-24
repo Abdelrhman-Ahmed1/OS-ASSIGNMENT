@@ -2,6 +2,8 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.*;
+import java.util.zip.*;
+import java.io.*;
 
 class Parser{
     private String commandName;
@@ -238,8 +240,6 @@ public class Terminal{
         }
     }
 
-
-
     public void wc(String[] args) {
         if (args.length != 1) {
             System.out.println("Usage: wc <filename>");
@@ -270,6 +270,91 @@ public class Terminal{
         }
     }
 
+    public void zip(String[] args) {
+        try {
+            boolean recursive = false;
+            String zipFileName;
+            List<String> filesToZip = new ArrayList<>();
+
+            if (args.length >= 3 && args[0].equals("-r")) {
+                recursive = true;
+                zipFileName = args[1];
+                filesToZip.add(args[2]);
+            } else if (args.length >= 2) {
+                zipFileName = args[0];
+                filesToZip.addAll(Arrays.asList(Arrays.copyOfRange(args, 1, args.length)));
+            } else {
+                System.out.println("Usage: zip [-r] archive.zip file(s)/directory");
+                return;
+            }
+
+            Path zipPath = Paths.get(zipFileName);
+            try (FileOutputStream fos = new FileOutputStream(zipPath.toFile());
+                 ZipOutputStream zos = new ZipOutputStream(fos)) {
+
+                for (String fileName : filesToZip) {
+                    Path filePath = Paths.get(fileName);
+                    if (Files.isDirectory(filePath) && recursive) {
+                        Files.walk(filePath).forEach(path -> {
+                            try {
+                                if (!Files.isDirectory(path)) {
+                                    ZipEntry zipEntry = new ZipEntry(filePath.relativize(path).toString());
+                                    zos.putNextEntry(zipEntry);
+                                    Files.copy(path, zos);
+                                    zos.closeEntry();
+                                }
+                            } catch (IOException e) {
+                                System.err.println("Error adding file: " + path);
+                            }
+                        });
+                    } else if (Files.isRegularFile(filePath)) {
+                        ZipEntry zipEntry = new ZipEntry(filePath.getFileName().toString());
+                        zos.putNextEntry(zipEntry);
+                        Files.copy(filePath, zos);
+                        zos.closeEntry();
+                    } else {
+                        System.err.println("File not found: " + fileName);
+                    }
+                }
+            }
+            System.out.println("Created: " + zipPath.toAbsolutePath());
+        } catch (IOException e) {
+            System.err.println("Error creating ZIP: " + e.getMessage());
+        }
+    }
+
+    public void unzip(String[] args) {
+        if (args.length < 1) {
+            System.out.println("Usage: unzip archive.zip [-d destination]");
+            return;
+        }
+
+        String zipFileName = args[0];
+        String destDir = ".";
+
+        if (args.length >= 3 && args[1].equals("-d")) {
+            destDir = args[2];
+        }
+
+        Path destPath = Paths.get(destDir);
+
+        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipFileName))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                Path newFilePath = destPath.resolve(entry.getName());
+                if (entry.isDirectory()) {
+                    Files.createDirectories(newFilePath);
+                } else {
+                    Files.createDirectories(newFilePath.getParent());
+                    Files.copy(zis, newFilePath, StandardCopyOption.REPLACE_EXISTING);
+                }
+                zis.closeEntry();
+            }
+            System.out.println("Extracted to: " + destPath.toAbsolutePath());
+        } catch (IOException e) {
+            System.err.println("Error extracting ZIP: " + e.getMessage());
+        }
+    }
 
     public void chooseCommandAction(String cmd, String[] args){
         switch(cmd){
@@ -307,6 +392,12 @@ public class Terminal{
             case "wc":
                 wc(args);
                 break;
+            case "zip":
+                zip(args);
+                break;
+            case "unzip":
+                unzip(args);
+                break;
             default:
                 System.out.println("Unknown command: " + cmd);
         }
@@ -336,7 +427,7 @@ public class Terminal{
             if(!terminal.parser.parse(line)){
                 continue;
             }
-            
+
             String cmd = terminal.parser.getCommandName();
             String[] cmdArgs = terminal.parser.getArgs();
 
@@ -382,7 +473,7 @@ public class Terminal{
                     continue;
                 }
             }
-            
+
 
 
 
